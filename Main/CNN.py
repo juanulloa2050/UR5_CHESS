@@ -11,8 +11,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Configuración de rutas
 
-modelo_path = r"C:\Users\Alegu\OneDrive\Documentos\ROBOTICA\UR5 IMAGE DETECTION\RedesGPU\best_ajedrez1.keras"
-dataset_path = r"C:\Users\Alegu\OneDrive\Documentos\ROBOTICA\UR5 IMAGE DETECTION\Data_Set_Definitivo\Data_Set_Sintetizado2"
+modelo_path = BASE_DIR / "Modelos" / "best_ajedrez1.keras"
+dataset_path = BASE_DIR / "Data_set" / "Data_Set_Sintetizado2"
 imagen_path = BASE_DIR / "Main" / "jugada_actual.png"
 
 

@@ -3,8 +3,13 @@
 import subprocess
 import chess
 import traceback
+from pathlib import Path
 
-stockfish_path = r"C:\Users\Alegu\OneDrive\Documentos\ROBOTICA\UR5 IMAGE DETECTION\stockfish-windows-x86-64-avx2.exe"  # path a Stockfish
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Configuración de rutas
+
+stockfish_path = BASE_DIR / "Stockfish" / "stockfish-windows-x86-64-avx2.exe"  # path a Stockfish
 
 class ChessEngine:
     def __init__(self, player_color="white", player_elo=1500, stockfish_elo=2200):
