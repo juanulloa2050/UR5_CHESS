@@ -37,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # === LÓGICA PREVIA AL INICIO DE LA GUI ===
 def inicializar_app(app):
     print(" Cargando configuraciones previas antes de mostrar la app")
-    #move_engine.iniciar_robot()  # Inicia el robot UR5 y la gripper Robotiq
+    move_engine.iniciar_robot()  # Inicia el robot UR5 y la gripper Robotiq
 
     try:
         app.camera = cv2.VideoCapture(camara)
@@ -216,7 +216,6 @@ class TableroAjedrez(tk.Frame):
             self.tomar_foto()
 
             move_engine.go_home()  # Mover el robot a la posición inicial
-            #move_engine.picture_to_home()
             fen, board_matrix, imagen_procesada = self.vision_engine.procesar_imagen(mostrar=False)
             print (board_matrix)
 

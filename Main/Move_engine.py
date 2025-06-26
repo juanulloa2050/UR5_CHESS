@@ -161,7 +161,7 @@ def get_actual_tcp_pose():
     
 def move_to(pose_mm_rad, a=1.2, v=0.5, wait=True, position_tolerance=0.5, orientation_tolerance=0.01):
     """
-    Envía un movimiento con movej a una pose, y espera si wait=True.
+    Envía un movimiento con move L a una pose, y espera si wait=True.
     pose_mm_rad: [x_mm, y_mm, z_mm, rx, ry, rz]
     a, v: aceleración y velocidad
     position_tolerance: en mm
@@ -259,7 +259,7 @@ def take_picture():
     move_to(pose_mm_rad=[-484, 288, 527, 3.071, -0.901, -0.07], a=1.2, v=0.5)
 
 def to_end():
-    move_to(pose_mm_rad=[-388, 10, 790, 1.546, 0.076, -0.585], a=1.2, v=0.5)
+    #move_to(pose_mm_rad=[-388, 10, 790, 1.546, 0.076, -0.585], a=1.2, v=0.5)
     end = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     end.connect((ip, 30002))
 
@@ -381,5 +381,5 @@ def set_digital_output(output_pin, value) -> bool:
         if 'sock' in locals():
             sock.close()
 
-
-
+go_home()
+to_end()
