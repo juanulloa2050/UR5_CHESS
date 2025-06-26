@@ -125,7 +125,7 @@ def gripper_activate():
 # FUNCIONES DE MOVIMIENTO
 # -------------------------
 
-def get_actual_tcp_pose(ip):
+def get_actual_tcp_pose():
     """
     Obtiene la posición actual del TCP en mm y radianes desde el UR a través del puerto 30003.
     Devuelve: [x_mm, y_mm, z_mm, rx, ry, rz]
@@ -200,7 +200,7 @@ move_to_pose()
     start_time = time.time()
 
     while True:
-        current = get_actual_tcp_pose(ip)
+        current = get_actual_tcp_pose()
         if current is None:
             time.sleep(0.1)
             continue
@@ -256,8 +256,6 @@ def picture_to_home():
     move_to(pose_mm_rad=pose_home, a=1.2, v=0.5)
 
 def take_picture():
-    #move_to(pose_mm_rad=[-388, 10, 790, 1.546, 0.076, -0.585], a=1.2, v=0.5)
-    #move_to(pose_mm_rad=[-390, 328, 961, 0.108, 0.302, 5.867], a=1.2, v=0.5)
     move_to(pose_mm_rad=[-484, 288, 527, 3.071, -0.901, -0.07], a=1.2, v=0.5)
 
 def to_end():
@@ -299,4 +297,89 @@ def take(casilla):
     gripper_open()
     move_to(pose_mm_rad=[X, Y, z_sobre, rx, ry, rz], a=1.2, v=0.5)
     gripper_open()
+
+def read_digital_inputs(timeout=5, max_attempts=5):
+    """
+    Lee las entradas digitales del robot
+    """
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+
+    try:
+        sock.connect((ip, 30002))
+        buffer = b''
+
+        for _ in range(max_attempts):
+            try:
+                data = sock.recv(4096)
+                if not data:
+                    time.sleep(0.1)
+                    continue
+
+                buffer += data
+                offset = 0
+                while offset < len(buffer):
+                    if len(buffer) - offset < 5:
+                        break
+                    
+                    pack_length = struct.unpack_from(">i", buffer, offset)[0]
+                    message_type = buffer[offset + 4]
+
+                    if len(buffer) - offset < pack_length:
+                        break
+
+                    if message_type == 16:
+                        sub_offset = offset + 5
+                        while sub_offset < offset + pack_length:
+                            if len(buffer) - sub_offset < 5:
+                                break
+
+                            sub_length, sub_type = struct.unpack_from(">IB", buffer, sub_offset)
+                            if len(buffer) - sub_offset < sub_length:
+                                break
+
+                            if sub_type == 3:
+                                digital_input_bits, _ = struct.unpack_from(">II", buffer, sub_offset + 5)
+                                return [(digital_input_bits >> bit) & 1 for bit in range(8)]
+
+                            sub_offset += sub_length
+
+                    offset += pack_length
+                buffer = buffer[offset:]
+
+            except (socket.timeout, struct.error, IndexError):
+                time.sleep(0.1)
+                continue
+
+    except socket.timeout:
+        print(f"[ERROR] Connection timed out after {timeout} seconds.")
+    except ConnectionRefusedError:
+        print(f"[ERROR] Connection refused. Is the robot reachable at {ip}:30002?")
+    except Exception as e:
+        print(f"[ERROR] Unexpected error: {e}")
+    finally:
+        sock.close()
+
+    return None
+
+
+def set_digital_output(output_pin, value) -> bool:
+    """
+    controla las salidas digitales del robot
+    """
+    urscript_command = f"set_standard_digital_out({output_pin}, {'True' if value else 'False'})\n"
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        sock.connect((ip, 30002))
+        sock.sendall(urscript_command.encode('utf-8'))
+        return True
+    
+    finally:
+        if 'sock' in locals():
+            sock.close()
+
+
 

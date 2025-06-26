@@ -1,32 +1,66 @@
-import numpy as np
-import math
+#!/usr/bin/env python3
+import socket
+import struct
+# codigo sacado de https://forum.universal-robots.com/t/retrieving-information-about-digital-inputs-through-the-real-time-interface/1811
+# se paso a python 3 y quito comentarios
+# el codigo funciona para leer las intradas digitales y las salidas digitales
 
-p_h8 = np.array([-420.40, 26.45])   # Casilla H8 (origen local del tablero)
-p_a1 = np.array([-217.45, 422.20])  # Casilla A1 (opuesta en diagonal)
-p_a8 = np.array([-225.16, 421.49])   # Casilla A8
 
-z = -45  # Altura de referencia (mm)
+def decodeData(data, offset=0):
+    i = offset
 
-# Ángulo de rotación en Z (en radianes)
-theta = math.atan2(p_a8[1] - p_h8[1], p_a8[0] - p_h8[0])
-print ("Ángulo de rotación (radianes):", theta)
+    # Longitud total del paquete
+    packLength = struct.unpack_from(">i", data, i)[0]
+    i += 4
 
-deg = math.degrees(theta)
-print("Ángulo de rotación (grados):", deg)
-# Traslación
-x, y = p_h8[0], p_h8[1]
+    # Tipo de mensaje (normalmente 16)
+    messageType = data[i]
+    i += 1
+    print(f"[INFO] Paquete largo: {packLength} bytes, tipo: {messageType}")
 
-# Matriz de transformación
-T = np.array([
-    [np.cos(theta), -np.sin(theta), 0, x],
-    [np.sin(theta),  np.cos(theta), 0, y],
-    [0,              0,             1, z],
-    [0,              0,             0, 1]
-])
+    if messageType == 16:
+        while i < offset + packLength:
+            subLength, subType = struct.unpack_from(">IB", data, i)
+            if subType == 3:
+                # subType 3 → paquete de tipo IO
+                digital_input_bits, digital_output_bits = struct.unpack_from(">II", data, i + 5)
+                print(f"[IO] Entradas (DI): {digital_input_bits:08b}, Salidas (DO): {digital_output_bits:08b}")
 
-# Punto en el sistema local
-p_local = np.array([440.65, 0, 0, 1])
+                # Puedes convertir a listas si lo prefieres:
+                di = [(digital_input_bits >> bit) & 1 for bit in range(8)]
+                do = [(digital_output_bits >> bit) & 1 for bit in range(8)]
+                print(f"[IO] DI bits: {di}")
+                print(f"[IO] DO bits: {do}")
 
-# Punto transformado al sistema global
-p_global = T @ p_local
-print("Coordenadas globales:", p_global)
+            i += subLength
+
+    return packLength
+
+
+def main(ip="192.168.0.100", port=30002, iterations=100):
+    print(f"[INFO] Conectando a {ip}:{port}")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((ip, port))
+
+    try:
+        for _ in range(iterations):
+            data = sock.recv(10000)
+            if not data:
+                continue
+
+            total_received = len(data)
+            interpreted = 0
+            messages = 0
+
+            while interpreted < total_received:
+                interpreted += decodeData(data, interpreted)
+                messages += 1
+
+            print(f"[INFO] Paquete de {total_received} bytes, {messages} mensajes interpretados\n")
+
+    finally:
+        print("[INFO] Cerrando socket")
+        sock.close()
+
+if __name__ == "__main__":
+    main()
