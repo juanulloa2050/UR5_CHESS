@@ -5,7 +5,7 @@ import time
 import socket
 import struct
 import math
-
+import cv2
 # -------------------------
 # CONFIGURACIÓN DEL ROBOT
 # -------------------------
@@ -445,9 +445,148 @@ def rotate_camera(delta_deg: float, a = 1.2, v = 0.5):
     except Exception as e:
         print(f"[ERROR] No se pudo enviar el comando de movimiento: {e}")
 
+def calibration():
+    cap = cv2.VideoCapture(0)
+    pattern_size = (7, 7)  # Tamaño del tablero de ajedrez (número de esquinas internas)
+    if not cap.isOpened():
+        raise RuntimeError("No se pudo abrir la cámara")
+
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        raise RuntimeError("No se pudo capturar la imagen")
+
+    # ── 2) Convertir a gris y detectar esquinas internas ───────────────
+    gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    flags  = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
+    found, corners = cv2.findChessboardCorners(gray, pattern_size, flags)
+
+    if not found:
+        print("Tablero no encontrado")
+        cv2.imshow("Imagen original", frame)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        return None
+
+    # ── 3) Refinar y obtener centro del tablero ────────────────────────
+    criteria = (cv2.TermCriteria_EPS + cv2.TermCriteria_MAX_ITER, 30, 0.001)
+    corners  = cv2.cornerSubPix(gray, corners, (11,11), (-1,-1), criteria)
+    board_center = corners.mean(axis=0).ravel()      # (cx_board, cy_board)
+
+    # ── 4) Centro de la imagen ─────────────────────────────────────────
+    h, w = frame.shape[:2]
+    img_center = np.array([w / 2.0, h / 2.0])        # (cx_img,  cy_img)
+
+    # ── 5) Desplazamiento necesario ────────────────────────────────────
+    dx, dy = img_center - board_center
+    print(f"Desplazamiento necesario (dx, dy) = ({dx:.1f}, {dy:.1f}) px")
+
+    # ── 6) Matriz de traslación y warpAffine ───────────────────────────
+    M = np.float32([[1, 0, dx],
+                    [0, 1, dy]])
+    centered = cv2.warpAffine(frame, M, (w, h))
+
+    # ── 7) Dibujar centros para verificación ───────────────────────────
+    for img, center, color in [(frame, board_center, (0,255,0)),
+                               (frame, img_center,  (0,0,255)),
+                               (centered, img_center, (0,0,255))]:
+        cv2.circle(img, tuple(np.int32(center)), 6, color, -1)
+
+    # ── 8) Visualizar ──────────────────────────────────────────────────
+    cv2.drawChessboardCorners(frame, pattern_size, corners, found)
+    cv2.imshow("Original", frame)
+    cv2.imshow("Tablero centrado", centered)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    return dx, dy, centered
+
+def capture_and_detect_angle(camera_index=0, pattern_size=(7,7)):
+    # 1) Inicializar la cámara
+    cap = cv2.VideoCapture(camera_index)
+    if not cap.isOpened():
+        print("No se puede abrir la cámara")
+        return
+
+    # 2) Capturar un único frame
+    ret, frame = cap.read()
+    cap.release()
+    if not ret:
+        print("No se pudo capturar la imagen")
+        return
+
+    # 3) Convertir a escala de grises
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # 4) Detectar esquinas internas del tablero
+    flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE
+    found, corners = cv2.findChessboardCorners(gray, pattern_size, flags)
+
+    if not found:
+        print("Tablero de ajedrez no encontrado")
+        return
+
+    # 5) Refinar la localización de las esquinas
+    criteria = (cv2.TermCriteria_EPS + cv2.TermCriteria_MAX_ITER, 30, 0.001)
+    corners_refined = cv2.cornerSubPix(gray, corners, (11,11), (-1,-1), criteria)
+
+    # 6) Seleccionar dos esquinas adyacentes en la misma fila
+    #    Aquí usamos las dos primeras esquinas detectadas, que corresponden
+    #    a la fila superior interna (puedes ajustar según orientación).
+    pts = corners_refined.reshape(-1, 2)
+    p1 = pts[0]   # primera esquina interna
+    p2 = pts[1]   # esquina interna siguiente en la misma fila
+
+    # 7) Calcular el ángulo respecto a la horizontal
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    angle_rad = math.atan2(dy, dx)
+    angle_deg = math.degrees(angle_rad)
+    print(f"Ángulo respecto a la horizontal: {angle_deg:.2f}°")
+
+    # 8) Dibujar resultados y mostrar
+    cv2.drawChessboardCorners(frame, pattern_size, corners_refined, found)
+    cv2.line(frame,
+             tuple(p1.astype(int)),
+             tuple(p2.astype(int)),
+             (0, 0, 255), 2)
+    cv2.imshow("Detección de tablero", frame)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    return angle_deg
+
 #go_home()
 #move_to(pose_mm_rad=pose_home, a=1.2, v=0.5)
 #pose = get_actual_tcp_pose()
 #print(get_actual_joint_positions_deg())
-#take_picture()
-#rotate_camera(5)
+take_picture()
+rotate_camera(20)
+angulooo = capture_and_detect_angle()
+rotate_camera(angulooo)  # Ajustar la cámara al ángulo detectado
+pose = get_actual_tcp_pose()
+
+angulooo = math.radians(90-angulooo-20)
+# Matriz de transformación
+T = np.array([
+    [np.cos(angulooo), -np.sin(angulooo), 0, pose[0]],
+    [np.sin(angulooo),  np.cos(angulooo), 0, pose[1]],
+    [0,              0,             1, pose[2]],
+    [0,              0,             0, 1]
+])
+
+def test(X, Y):
+    # Punto en el sistema local
+    p_local = np.array([X, Y, 0, 1])
+
+    # Punto transformado al sistema global
+    p_global = T @ p_local
+    return p_global[:2]  # Retornar solo x, y
+
+capture_and_detect_angle()
+
+x, y = calibration()
+test_x, test_y = test(x, y)
+
+move_to(pose_mm_rad=[test_x, test_y, pose[2], pose[3], pose[4], pose[5]], a=1.2, v=0.5)
+
+capture_and_detect_angle()
