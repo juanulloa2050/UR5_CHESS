@@ -20,7 +20,7 @@ p_a8 = np.array([-197.15, 422.2])  # Casilla A8 (opuesta)
 z = -45
 z_agarre = z + 29
 z_sobre = z + 160
-rx, ry, rz = 3.08, 0.79, 0.095
+rx, ry, rz = 3.142, 0, 0
 
 # -------------------------
 # MATRIZ DE TRANSFORMACIÓN
@@ -84,7 +84,7 @@ for col in range(8):     # columnas (a=0, h=7)
 
 home = pos_global = transform_point(((4 * 56) + 28), -60)
 z_home = z + 300
-pose_home = [home[0], home[1], z_home, rx, ry, rz]
+pose_home = [home[0], home[1], z_home, rx, ry, 0]
 
 
 # -------------------------
@@ -256,7 +256,7 @@ def picture_to_home():
     move_to(pose_mm_rad=pose_home, a=1.2, v=0.5)
 
 def take_picture():
-    move_to(pose_mm_rad=[-484, 288, 527, 3.071, -0.901, -0.07], a=1.2, v=0.5)
+    move_to(pose_mm_rad=[-484, 288, 527, rx, ry, rz], a=1.2, v=0.5)
 
 def to_end():
     #move_to(pose_mm_rad=[-388, 10, 790, 1.546, 0.076, -0.585], a=1.2, v=0.5)
@@ -381,5 +381,73 @@ def set_digital_output(output_pin, value) -> bool:
         if 'sock' in locals():
             sock.close()
 
-go_home()
-to_end()
+def get_actual_joint_positions_deg():
+    """
+    Obtiene las posiciones actuales de las articulaciones del UR5 en grados desde el puerto 30003.
+    Devuelve: [j0_deg, j1_deg, j2_deg, j3_deg, j4_deg, j5_deg]
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(2.0)
+            s.connect((ip, 30003))
+
+            # Leer el primer paquete completo (1108 bytes esperados)
+            data = b''
+            while len(data) < 1108:
+                more = s.recv(1108 - len(data))
+                if not more:
+                    raise Exception("Conexión cerrada prematuramente.")
+                data += more
+
+            # Las posiciones articulares están entre los bytes 252 a 299 (6*8 = 48 bytes)
+            joint_bytes = data[252:300]
+            joint_positions_rad = struct.unpack('!6d', joint_bytes)
+
+            # Convertir a grados
+            joint_positions_deg = [math.degrees(j) for j in joint_positions_rad]
+
+            return joint_positions_deg
+
+    except Exception as e:
+        print(f"[ERROR] No se pudo leer la posición de las articulaciones: {e}")
+        return None
+
+def rotate_camera(delta_deg: float, a = 1.2, v = 0.5):
+    """
+    Rota la última articulación (J5) del UR5 una cantidad de grados especificada.
+
+    Parámetros:
+        ip (str): IP del robot UR5.
+        delta_deg (float): Grados a rotar la última articulación (positivos o negativos).
+        a (float): Aceleración del movimiento (rad/s²).
+        v (float): Velocidad del movimiento (rad/s).
+    """
+    joint_positions_deg = get_actual_joint_positions_deg()
+    if joint_positions_deg is None:
+        print("[ERROR] No se pudo obtener la posición articular actual.")
+        return
+
+    # Modificar solo la última articulación
+    joint_positions_deg[5] += delta_deg
+
+    # Convertir a radianes
+    joint_positions_rad = [math.radians(j) for j in joint_positions_deg]
+
+    # Preparar script
+    joint_str = ", ".join([f"{q:.5f}" for q in joint_positions_rad])
+    script = f"movej([{joint_str}], a={a}, v={v})\n"
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((ip, 30002))
+            s.send(script.encode('utf-8'))
+            print("[INFO] Movimiento enviado al UR5.")
+    except Exception as e:
+        print(f"[ERROR] No se pudo enviar el comando de movimiento: {e}")
+
+#go_home()
+#move_to(pose_mm_rad=pose_home, a=1.2, v=0.5)
+#pose = get_actual_tcp_pose()
+#print(get_actual_joint_positions_deg())
+#take_picture()
+#rotate_camera(5)
